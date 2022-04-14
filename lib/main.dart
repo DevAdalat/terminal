@@ -1,21 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:xterm/flutter.dart';
 import 'package:xterm/xterm.dart';
 
-const host = 'ssh://localhost:22';
+const host = 'ssh://localhost:8022';
 const username = 'u0_a280';
 const password = '123456';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -24,30 +25,29 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: MyHomePage(),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  MyHomePage({Key? key}) : super(key: key);
+  const MyHomePage({Key? key}) : super(key: key);
 
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
 
 class SSHTerminalBackend extends TerminalBackend {
+
   late SSHClient client;
 
-  String _host;
-  String _username;
-  String _password;
+  final String _host;
 
   final _exitCodeCompleter = Completer<int>();
   final _outStream = StreamController<String>();
 
-  SSHTerminalBackend(this._host, this._username, this._password);
-
+  SSHTerminalBackend(this._host, this.sshSocket);
+	SSHSocket sshSocket;
   void onWrite(String data) {
     _outStream.sink.add(data);
   }
@@ -60,27 +60,13 @@ class SSHTerminalBackend extends TerminalBackend {
     // Use utf8.decoder to handle broken utf8 chunks
     final _sshOutput = StreamController<List<int>>();
     _sshOutput.stream.transform(utf8.decoder).listen(onWrite);
+		
 
     onWrite('connecting $_host...');
-    client = SSHClient(
-      hostport: Uri.parse(_host),
-      username: _username,
-      print: print,
-      termWidth: 80,
-      termHeight: 25,
-      termvar: 'xterm-256color',
-      onPasswordRequest: () => _password,
-      response: (data) {
-        _sshOutput.add(data);
-      },
-      success: () {
-        onWrite('connected.\n');
-      },
-      disconnected: () {
-        onWrite('disconnected.');
-        _outStream.close();
-      },
-    );
+		client = SSHClient(
+				sshSocket,
+				username: username,
+				onPasswordRequest: () => password);
   }
 
   @override
@@ -88,17 +74,16 @@ class SSHTerminalBackend extends TerminalBackend {
 
   @override
   void resize(int width, int height, int pixelWidth, int pixelHeight) {
-    client.setTerminalWindowSize(width, height);
   }
 
   @override
   void write(String input) {
-    client.sendChannelData(Uint8List.fromList(utf8.encode(input)));
+		_outStream.sink.add('Disconnected');
   }
 
   @override
   void terminate() {
-    client.disconnect('terminate');
+    client.close();
   }
 
   @override
@@ -111,21 +96,40 @@ class _MyHomePageState extends State<MyHomePage> {
   late Terminal terminal;
   late SSHTerminalBackend backend;
 
+	Future<SSHSocket> connecting() async {
+		return await SSHSocket.connect('localhost', 8022);
+	}
+
+	void setup() async {
+		final socket = await connecting();
+		backend = SSHTerminalBackend(host, socket );
+    terminal = Terminal(backend: backend, maxLines: 10000);
+	}
+
   @override
   void initState() {
     super.initState();
-    backend = SSHTerminalBackend(host, username, password);
-    terminal = Terminal(backend: backend, maxLines: 10000);
+		setup();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: TerminalView(
-          terminal: terminal,
-        ),
-      ),
+					child: FutureBuilder(
+							future: connecting(), builder: (BuildContext context, AsyncSnapshot<SSHSocket> snapshot) { 
+								setup();
+								if (snapshot.connectionState == ConnectionState.waiting) {
+									return const Center(
+											child: CircularProgressIndicator(),
+									);
+									
+								}
+								return TerminalView(terminal: terminal); 
+							},
+							
+					)
+				),
     );
   }
 }
