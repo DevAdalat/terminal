@@ -8,8 +8,8 @@ import 'package:xterm/flutter.dart';
 import 'package:xterm/xterm.dart';
 
 const host = 'ssh://localhost:22';
-const username = '<your username>';
-const password = '<your password>';
+const username = 'u0_a280';
+const password = '123456';
 
 void main() {
   runApp(MyApp());
